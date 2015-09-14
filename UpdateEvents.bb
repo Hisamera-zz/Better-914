@@ -6947,8 +6947,6 @@ Function UpdateEvents()
 				
 			Case "914"
 				;[Block]
-				If PlayerRoom = e\room Then
-					GiveAchievement(Achv914)
 					
 					EntityPick(Camera, 1.0)
 					If PickedEntity() = e\room\Objects[0] Then
@@ -6960,11 +6958,12 @@ Function UpdateEvents()
 					EndIf
 					
 					If MouseDown1 Or MouseHit1 Then
-						If GrabbedEntity <> 0 Then ;avain
+						If GrabbedEntity <> 0 Then ;key
 							If GrabbedEntity = e\room\Objects[0] Then
 								If e\EventState = 0 Then
 									DrawHandIcon = True
 									TurnEntity(GrabbedEntity, 0, 0, -mouse_x_speed_1 * 2.5)
+									Able = False
 									
 									angle = WrapAngle(EntityRoll(e\room\Objects[0]))
 									If angle > 181 Then DrawArrowIcon(3) = True
@@ -6983,6 +6982,8 @@ Function UpdateEvents()
 													If Abs(EntityY(it\obj) - (e\room\y + 648.0 * RoomScale)) < 104.0 Then
 														e\EventState = 1
 														e\SoundCHN = PlaySound2(MachineSFX, Camera, e\room\Objects[1])
+														Able = True
+														GiveAchievement(Achv914)
 														Exit
 													EndIf
 												End If
@@ -6994,6 +6995,8 @@ Function UpdateEvents()
 								If e\EventState = 0 Then
 									DrawHandIcon = True
 									TurnEntity(GrabbedEntity, 0, 0, -mouse_x_speed_1 * 2.5)
+									
+									Able = False
 									
 									angle# = WrapAngle(EntityRoll(e\room\Objects[1]))
 									DrawArrowIcon(3) = True
@@ -7011,6 +7014,7 @@ Function UpdateEvents()
 							End If
 						End If
 					Else
+						Able = True
 						GrabbedEntity = 0
 					End If
 					
@@ -7052,6 +7056,7 @@ Function UpdateEvents()
 					
 					If e\EventState > 0 Then
 						e\EventState = e\EventState + FPSfactor
+						Able = True
 						
 						
 						e\room\RoomDoors[1]\open = False
@@ -7127,7 +7132,7 @@ Function UpdateEvents()
 						End If
 					End If
 					
-				EndIf
+				
 				;[End Block]
 			Case "1048a"
 				;[Block]

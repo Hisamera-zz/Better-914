@@ -226,6 +226,8 @@ Dim RadioCHN%(8)
 Dim OldAiPics%(5)
 
 Global PlayTime%
+Global Able = True
+Global Heat#
 
 ;[End block]
 
@@ -425,7 +427,9 @@ Function UpdateConsole()
 					CreateConsoleMsg("Death timer: "+KillTimer)					
 					CreateConsoleMsg("Blinktimer: "+BlinkTimer)
 					CreateConsoleMsg("Injuries: "+Injuries)
+					CreateConsoleMsg("Heat: "+Heat)
 					CreateConsoleMsg("Bloodloss: "+Bloodloss)
+					CreateConsoleMsg("WearingGasMask: "+WearingGasMask)
 					CreateConsoleMsg("******************************")
 				Case "camerapick"
 					c = CameraPick(Camera,GraphicWidth/2, GraphicHeight/2)
@@ -466,6 +470,8 @@ Function UpdateConsole()
 				Case "heal"
 					Injuries = 0
 					Bloodloss = 0
+				Case "heat"
+					Heat = Heat +0.2
 				Case "teleport"
 					StrTemp$ = Lower(Right(ConsoleInput, Len(ConsoleInput) - Instr(ConsoleInput, " ")))
 					
@@ -2352,8 +2358,22 @@ Function MovePlayer()
 				Sprint = 2.5
 				Stamina = Stamina - FPSfactor * 0.5 * StaminaEffect
 				If Stamina <= 0 Then Stamina = -20.0
+				If WearingGasMask = 4 Then 
+					Min((Heat = Heat + FPSfactor * 0.002),2.5)
+					If Msg="" And Heat < 0.5 Then 
+						Msg = "You feel excesive heat in your muscles"
+						MsgTimer = 70*5
+					EndIf
+				EndIf
+				If Heat => 0.5 Then 
+					Stamina = Min(Stamina, 100 - Heat*40)
+					If Msg="" And Heat > 0.5 Then 
+						Msg = "Your muscles are burning"
+						MsgTimer = 70*5
+					EndIf
+				EndIf
 			End If
-			
+			If ((Heat < 0.5) And (Heat > 0) And  (WearingGasMask <> 4)) Then Max((Heat = Heat - FPSfactor * 0.001),0)
 			If PlayerRoom\RoomTemplate\Name = "pocketdimension" Then 
 				If EntityY(Collider)<2000*RoomScale Or EntityY(Collider)>2608*RoomScale Then
 					Stamina = 0
@@ -2580,7 +2600,9 @@ Function MouseLook()
 		;käännetään kameraa sivulle jos pelaaja on vammautunut
 		;RotateEntity Collider, EntityPitch(Collider), EntityYaw(Collider), Max(Min(up*30*Injuries,50),-50)
 		PositionEntity Camera, EntityX(Collider), EntityY(Collider), EntityZ(Collider)
-		RotateEntity Camera, 0, EntityYaw(Collider), roll*0.5
+		;If Able
+			RotateEntity Camera, 0, EntityYaw(Collider), roll*0.5
+		;End If
 		
 		MoveEntity Camera, side, up + 0.6 + CrouchState * -0.3, 0
 		
@@ -2589,7 +2611,6 @@ Function MouseLook()
 		; -- Update the smoothing que To smooth the movement of the mouse.
 		mouse_x_speed_1# = CurveValue(MouseXSpeed() * (MouseSens + 0.6) , mouse_x_speed_1, 6.0 / (MouseSens + 1.0)) 
 		If Int(mouse_x_speed_1) = Int(Nan1) Then mouse_x_speed_1 = 0
-		
 		If InvertMouse Then
 			mouse_y_speed_1# = CurveValue(-MouseYSpeed() * (MouseSens + 0.6), mouse_y_speed_1, 6.0/(MouseSens+1.0)) 
 		Else
@@ -2599,15 +2620,17 @@ Function MouseLook()
 		
 		Local the_yaw# = ((mouse_x_speed_1#)) * mouselook_x_inc# / (1.0+WearingVest)
 		Local the_pitch# = ((mouse_y_speed_1#)) * mouselook_y_inc# / (1.0+WearingVest)
-		
-		TurnEntity Collider, 0.0, -the_yaw#, 0.0 ; Turn the user on the Y (yaw) axis.
-		user_camera_pitch# = user_camera_pitch# + the_pitch#
+		If Able
+			TurnEntity Collider, 0.0, -the_yaw#, 0.0 ; Turn the user on the Y (yaw) axis.
+			user_camera_pitch# = user_camera_pitch# + the_pitch#
+		End If 
 		; -- Limit the user;s camera To within 180 degrees of pitch rotation. ;EntityPitch(); returns useless values so we need To use a variable To keep track of the camera pitch.
 		If user_camera_pitch# > 70.0 Then user_camera_pitch# = 70.0
 		If user_camera_pitch# < - 70.0 Then user_camera_pitch# = -70.0
 		
-		RotateEntity Camera, WrapAngle(user_camera_pitch + Rnd(-CameraShake, CameraShake)), WrapAngle(EntityYaw(Collider) + Rnd(-CameraShake, CameraShake)), roll ; Pitch the user;s camera up And down.
-		
+		;If Able
+			RotateEntity Camera, WrapAngle(user_camera_pitch + Rnd(-CameraShake, CameraShake)), WrapAngle(EntityYaw(Collider) + Rnd(-CameraShake, CameraShake)), roll ; Pitch the user;s camera up And down.
+		;End If 
 		If PlayerRoom\RoomTemplate\Name = "pocketdimension" Then
 			If EntityY(Collider)<2000*RoomScale Or EntityY(Collider)>2608*RoomScale Then
 				RotateEntity Camera, WrapAngle(EntityPitch(Camera)),WrapAngle(EntityYaw(Camera)), roll+WrapAngle(Sin(MilliSecs()/150.0)*30.0) ; Pitch the user;s camera up And down.
@@ -2639,7 +2662,6 @@ Function MouseLook()
 			
 			HeadDropSpeed# = HeadDropSpeed - 0.002 * FPSfactor
 		EndIf
-		
 		If InvertMouse Then
 			TurnEntity (Camera, -MouseYSpeed() * 0.05 * FPSfactor, -MouseXSpeed() * 0.15 * FPSfactor, 0)
 		Else
@@ -2674,14 +2696,28 @@ Function MouseLook()
 	EndIf
 	
 	If WearingGasMask Or WearingHazmat Then
-		If WearingGasMask = 2 Then Stamina = Min(100, Stamina + (100.0-Stamina)*0.01*FPSfactor)
-		If WearingHazmat = 2 Then 
+		If (WearingGasMask=2) Or (WearingGasMask=4) Or (WearingGasMask=6) Or (WearingGasMask=7) Then 
 			Stamina = Min(100, Stamina + (100.0-Stamina)*0.01*FPSfactor)
-		ElseIf WearingHazmat=1
-			Stamina = Min(60, Stamina)
+		ElseIf WearingHazmat=1 Then
+			Stamina=Min(60, Stamina)
 		EndIf
-		
-		ShowEntity(GasMaskOverlay)
+		If WearingGasMask <6  Then
+			ShowEntity(GasMaskOverlay)
+		Else
+			HideEntity(GasMaskOverlay)
+		EndIf
+		If WearingGasMask = 6 Then
+			Heat = Heat + 0.015*FPSfactor
+			 If Heat <5 Then
+				Msg="You feel the unimaginable heat in you"
+				MsgTimer=70*5
+			ElseIf Heat <10 Then
+				Msg="You are burning"
+				MsgTimer=70*5
+			Else If Heat >10 Then
+				Kill()
+			EndIf 
+		EndIf
 	Else
 		HideEntity(GasMaskOverlay)
 	End If
@@ -3429,6 +3465,16 @@ Function DrawGUI()
 						If WearingGasMask=2 Then Rect(x - 3, y - 3, width + 6, height + 6)
 					Case "gasmask3"
 						If WearingGasMask=3 Then Rect(x - 3, y - 3, width + 6, height + 6)
+					Case "toogoodgasmask"
+						If WearingGasMask=4 Then Rect(x - 3, y - 3, width + 6, height + 6)
+					Case "suffocatinggasmask"
+						If WearingGasMask=5 Then Rect(x - 3, y - 3, width + 6, height + 6)
+					Case "toosupergasmask"
+						If WearingGasMask=6 Then Rect(x - 3, y - 3, width + 6, height + 6)
+					Case "cursedgasmask"
+						If WearingGasMask=7 Then Rect(x - 3, y - 3, width + 6, height + 6)
+					Case "supersuffocatinggasmask"
+						If WearingGasMask=8 Then Rect(x - 3, y - 3, width + 6, height + 6)				
 					Case "hazmatsuit"
 						If WearingHazmat=1 Then Rect(x - 3, y - 3, width + 6, height + 6)
 					Case "hazmatsuit2"
@@ -4349,22 +4395,39 @@ Function DrawGUI()
 						WearingVest = 2
 					EndIf
 					SelectedItem = Null	
-				Case "gasmask", "supergasmask", "gasmask3"
-					If WearingGasMask Then
+				Case "gasmask", "supergasmask", "gasmask3", "suffocatinggasmask", "supersuffocatinggasmask", "toogoodgasmask", "toosupergasmask", "cursedgasmask"
+					If WearingGasMask<6 Then 
 						Msg = "You took off the gas mask."
-					Else
+					Else Msg = "You cant take off gas mask."
+					EndIf
+					If ((SelectedItem\itemtemplate\tempname="supersuffocatinggasmask") Or (SelectedItem\itemtemplate\tempname="cursedgasmask") Or (SelectedItem\itemtemplate\tempname="toosupergasmask")) Then
+						Msg = "You put on the gas mask, and feel as gas mask is combining with you face."
+						Wearing178 = 0
+						If WearingNightVision Then CameraFogFar = StoredCameraFogFar
+						WearingNightVision = 0
+					Else 
 						Msg = "You put on the gas mask."
 						Wearing178 = 0
 						If WearingNightVision Then CameraFogFar = StoredCameraFogFar
 						WearingNightVision = 0
 					EndIf
 					MsgTimer = 70 * 5
-					If SelectedItem\itemtemplate\tempname="gasmask3" Then
+					If SelectedItem\itemtemplate\tempname="supersuffocatinggasmask" Then
+						If WearingGasMask=0 Then WearingGasMask = 8 Else WearingGasMask=8
+					ElseIf SelectedItem\itemtemplate\tempname="cursedgasmask" Then
+						If WearingGasMask=0 Then WearingGasMask = 7 Else WearingGasMask=7
+					ElseIf SelectedItem\itemtemplate\tempname="toosupergasmask" Then
+						If WearingGasMask=0 Then WearingGasMask = 6 Else WearingGasMask=6
+					ElseIf SelectedItem\itemtemplate\tempname="suffocatinggasmask" Then
+						If WearingGasMask=0 Then WearingGasMask = 5 Else WearingGasMask=0
+					ElseIf SelectedItem\itemtemplate\tempname="toogoodgasmask" Then
+						If WearingGasMask=0 Then WearingGasMask = 4 Else WearingGasMask=0
+					ElseIf SelectedItem\itemtemplate\tempname="gasmask3" Then
 						If WearingGasMask=0 Then WearingGasMask = 3 Else WearingGasMask=0
-					ElseIf SelectedItem\itemtemplate\tempname="supergasmask"
+					ElseIf SelectedItem\itemtemplate\tempname="supergasmask" Then 
 						If WearingGasMask=0 Then WearingGasMask = 2 Else WearingGasMask=0
 					Else
-						WearingGasMask = (Not WearingGasMask)
+					WearingGasMask = (Not WearingGasMask)
 					EndIf
 					SelectedItem = Null				
 				Case "navigator", "nav"
@@ -5247,6 +5310,7 @@ Function NullGame()
 	Bloodloss = 0
 	Injuries = 0
 	Infect = 0
+	Heat = 0
 	
 	For i = 0 To 5
 		SCP1025state[i]=0
@@ -5690,404 +5754,7 @@ Function Animate2#(entity%, curr#, start%, quit%, speed#, loop=True)
 	
 End Function 
 
-
-Function Use914(item.Items, setting$, x#, y#, z#)
-	
-	RefinedItems = RefinedItems+1
-	
-	Local it2.Items
-	Select item\itemtemplate\name
-		Case "Gas Mask", "Heavy Gas Mask"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-					RemoveItem(item)
-				Case "1:1"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-				Case "fine", "very fine"
-					it2 = CreateItem("Gas Mask", "supergasmask", x, y, z)
-					RemoveItem(item)
-			End Select
-		Case "Ballistic Vest"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-					RemoveItem(item)
-				Case "1:1"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-				Case "fine"
-					it2 = CreateItem("Heavy Ballistic Vest", "finevest", x, y, z)
-					RemoveItem(item)
-				Case "very fine"
-					it2 = CreateItem("Bulky Ballistic Vest", "veryfinevest", x, y, z)
-					RemoveItem(item)
-			End Select
-		Case "3-D Glasses"
-			Select setting
-				Case "rough,coarse"
-					d.Decals = CreateDecal(0, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-					RemoveItem(item)
-					For n.NPCs = Each NPCs
-						If n\NPCtype = NPCtype178 Then RemoveNPC(n)
-					Next
-				Case "1:1","fine","very fine"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-			End Select
-		Case "Clipboard"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-					For i% = 0 To 19
-						If item\SecondInv[i]<>Null Then RemoveItem(item\SecondInv[i])
-						item\SecondInv[i]=Null
-					Next
-					RemoveItem(item)
-				Case "1:1"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-				Case "fine"
-					item\invSlots = Max(item\state2,15)
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-				Case "very fine"
-					item\invSlots = Max(item\state2,20)
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-			End Select
-		Case "Cowbell"
-			Select setting
-				Case "rough","coarse"
-					d.Decals = CreateDecal(0, x, 8*RoomScale+0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-					RemoveItem(item)
-				Case "1:1","fine","very fine"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-			End Select
-		Case "Night Vision Goggles"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-					RemoveItem(item)
-				Case "1:1"
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)
-				Case "fine", "very fine"
-					it2 = CreateItem("Night Vision Goggles", "supernv", x, y, z)
-					RemoveItem(item)
-			End Select
-		Case "Metal Panel", "SCP-148 Ingot"
-			Select setting
-				Case "rough", "coarse"
-					it2 = CreateItem("SCP-148 Ingot", "scp148ingot", x, y, z)
-					RemoveItem(item)
-				Case "1:1", "fine", "very fine"
-					it2 = Null
-					For it.Items = Each Items
-						If it<>item And it\obj <> 0 And it\Picked = False Then
-							If Distance(EntityX(it\obj,True), EntityZ(it\obj,True), EntityX(item\obj, True), EntityZ(item\obj, True)) < (180.0 * RoomScale) Then
-								it2 = it
-								Exit
-							ElseIf Distance(EntityX(it\obj,True), EntityZ(it\obj,True), x,z) < (180.0 * RoomScale)
-								it2 = it
-								Exit
-							End If
-						End If
-					Next
-					
-					If it2<>Null Then
-						Select it2\itemtemplate\tempname
-							Case "gasmask", "supergasmask"
-								RemoveItem (it2)
-								RemoveItem (item)
-								
-								it2 = CreateItem("Heavy Gas Mask", "gasmask3", x, y, z)
-							Case "vest"
-								RemoveItem (it2)
-								RemoveItem(item)
-								it2 = CreateItem("Heavy Ballistic Vest", "finevest", x, y, z)
-							Case "hazmatsuit","hazmatsuit2"
-								RemoveItem (it2)
-								RemoveItem(item)
-								it2 = CreateItem("Heavy Hazmat Suit", "hazmatsuit3", x, y, z)
-						End Select
-					Else 
-						If item\itemtemplate\name="SCP-148 Ingot" Then
-							it2 = CreateItem("Metal Panel", "scp148", x, y, z)
-							RemoveItem(item)
-						Else
-							PositionEntity(item\obj, x, y, z)
-							ResetEntity(item\obj)							
-						EndIf
-					EndIf					
-			End Select
-			
-		Case "Severed Hand"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(3, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1","fine","very fine"
-					it2 = CreateItem("Severed Hand", "hand2", x, y, z)
-			End Select
-			RemoveItem(item)
-		Case "First Aid Kit"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("Blue First Aid Kit", "firstaid2", x, y, z)
-				Case "fine"
-					it2 = CreateItem("Small First Aid Kit", "finefirstaid", x, y, z)
-				Case "very fine"
-					it2 = CreateItem("Strange Bottle", "veryfinefirstaid", x, y, z)
-			End Select
-			RemoveItem(item)
-		Case "Level 1 Key Card", "Level 2 Key Card", "Level 3 Key Card", "Level 4 Key Card", "Level 5 Key Card", "Key Card"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.07 : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("Playing Card", "misc", x, y, z)
-				Case "fine"
-					If Rand(6)=1 Then 
-						it2 = CreateItem("Playing Card", "misc", x, y, z)
-					Else
-						Select item\itemtemplate\name
-							Case "Level 1 Key Card"
-								it2 = CreateItem("Level 2 Key Card", "key2", x, y, z)
-							Case "Level 2 Key Card"
-								it2 = CreateItem("Level 3 Key Card", "key3", x, y, z)
-							Case "Level 3 Key Card"
-								it2 = CreateItem("Mastercard", "misc", x, y, z)
-							Case "Level 4 Key Card"
-								it2 = CreateItem("Level 5 Key Card", "key5", x, y, z)
-							Case "Level 5 Key Card"	
-								it2 = CreateItem("Key Card Omni", "key6", x, y, z)
-						End Select						
-					EndIf
-				Case "very fine"
-					If Rand(3)=1 Then
-						it2 = CreateItem("Key Card Omni", "key6", x, y, z)
-					Else	
-						it2 = CreateItem("Mastercard", "misc", x, y, z)
-					EndIf
-			End Select			
-			
-			RemoveItem(item)
-		Case "Key Card Omni"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.07 : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					If Rand(2)=1 Then
-						it2 = CreateItem("Mastercard", "misc", x, y, z)
-					Else
-						it2 = CreateItem("Playing Card", "misc", x, y, z)			
-					EndIf	
-				Case "fine", "very fine"
-					it2 = CreateItem("Key Card Omni", "key6", x, y, z)
-			End Select			
-			
-			RemoveItem(item)
-		Case "Playing Card", "Mastercard"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-					d\Size = 0.07 : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1", "fine", "very fine"
-					If Rand(2)=1 Then
-						it2 = CreateItem("Mastercard", "misc", x, y, z)				
-					Else
-						it2 = CreateItem("Level 2 Key Card", "key2", x, y, z)	
-					EndIf
-			End Select
-			RemoveItem(item)
-		Case "S-NAV 300 Navigator", "S-NAV 310 Navigator", "S-NAV Navigator", "S-NAV Navigator Ultimate"
-			Select setting
-				Case "rough", "coarse"
-					it2 = CreateItem("Electronical components", "misc", x, y, z)
-				Case "1:1"
-					it2 = CreateItem("S-NAV Navigator", "nav", x, y, z)
-					it2\state = 100
-				Case "fine"
-					it2 = CreateItem("S-NAV 310 Navigator", "nav", x, y, z)
-					it2\state = 100
-				Case "very fine"
-					it2 = CreateItem("S-NAV Navigator Ultimate", "nav", x, y, z)
-					it2\state = 101
-			End Select
-			
-			RemoveItem(item)
-		Case "Radio Transceiver"
-			Select setting
-				Case "rough", "coarse"
-					it2 = CreateItem("Electronical components", "misc", x, y, z)
-				Case "1:1"
-					it2 = CreateItem("Radio Transceiver", "18vradio", x, y, z)
-					it2\state = 100
-				Case "fine"
-					it2 = CreateItem("Radio Transceiver", "fineradio", x, y, z)
-					it2\state = 101
-				Case "very fine"
-					it2 = CreateItem("Radio Transceiver", "veryfineradio", x, y, z)
-					it2\state = 101
-			End Select
-			
-			RemoveItem(item)
-		Case "SCP-513"
-			Select setting
-				Case "rough", "coarse"
-					PlaySound LoadTempSound("SFX\Bell4.ogg")
-					For n.npcs = Each NPCs
-						If n\npctype = NPCtype5131 Then RemoveNPC(n)
-					Next
-					d.Decals = CreateDecal(0, x, 8*RoomScale+0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					
-				Case "fine"
-					
-				Case "very fine"
-					
-			End Select
-			
-			RemoveItem(item)
-		Case "Some SCP-420-J", "Cigarette"
-			Select setting
-				Case "rough", "coarse"			
-					d.Decals = CreateDecal(0, x, 8*RoomScale+0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("Cigarette", "cigarette", x + 1.5, y + 0.5, z + 1.0)
-				Case "fine"
-					it2 = CreateItem("Joint", "420s", x + 1.5, y + 0.5, z + 1.0)
-				Case "very fine"
-					it2 = CreateItem("Smelly Joint", "420s", x + 1.5, y + 0.5, z + 1.0)
-			End Select
-			
-			RemoveItem(item)
-		Case "9V Battery", "18V Battery", "Strange Battery"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(0, x, 8 * RoomScale + 0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("18V Battery", "18vbat", x, y, z)
-				Case "fine"
-					it2 = CreateItem("Strange Battery", "killbat", x, y, z)
-				Case "very fine"
-					it2 = CreateItem("Strange Battery", "killbat", x, y, z)
-			End Select
-			
-			RemoveItem(item)
-		Case "ReVision Eyedrops", "RedVision Eyedrops", "Eyedrops"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(0, x, 8 * RoomScale + 0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("RedVision Eyedrops", "eyedrops", x,y,z)
-				Case "fine"
-					it2 = CreateItem("Eyedrops", "fineeyedrops", x,y,z)
-				Case "very fine"
-					it2 = CreateItem("Eyedrops", "supereyedrops", x,y,z)
-			End Select
-			
-			RemoveItem(item)		
-		Case "Hazmat Suit"
-			Select setting
-				Case "rough", "coarse"
-					d.Decals = CreateDecal(0, x, 8 * RoomScale + 0.010, z, 90, Rand(360), 0)
-					d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-				Case "1:1"
-					it2 = CreateItem("Hazmat Suit", "hazmatsuit", x,y,z)
-				Case "fine"
-					it2 = CreateItem("Hazmat Suit", "hazmatsuit2", x,y,z)
-				Case "very fine"
-					it2 = CreateItem("Hazmat Suit", "hazmatsuit2", x,y,z)
-			End Select
-			
-			RemoveItem(item)
-		Default
-			
-			Select item\itemtemplate\tempname
-				Case "cup"
-					Select setting
-						Case "rough", "coarse"
-							d.Decals = CreateDecal(0, x, 8 * RoomScale + 0.010, z, 90, Rand(360), 0)
-							d\Size = 0.2 : EntityAlpha(d\obj, 0.8) : ScaleSprite(d\obj, d\Size, d\Size)
-						Case "1:1"
-							it2 = CreateItem("cup", "cup", x,y,z)
-							it2\name = item\name
-							it2\r = 255-item\r
-							it2\g = 255-item\g
-							it2\b = 255-item\b
-						Case "fine"
-							it2 = CreateItem("cup", "cup", x,y,z)
-							it2\name = item\name
-							it2\state = 1.0
-							it2\r = Min(item\r*Rnd(0.9,1.1),255)
-							it2\g = Min(item\g*Rnd(0.9,1.1),255)
-							it2\b = Min(item\b*Rnd(0.9,1.1),255)
-						Case "very fine"
-							it2 = CreateItem("cup", "cup", x,y,z)
-							it2\name = item\name
-							it2\state = Max(it2\state*2.0,2.0)	
-							it2\r = Min(item\r*Rnd(0.5,1.5),255)
-							it2\g = Min(item\g*Rnd(0.5,1.5),255)
-							it2\b = Min(item\b*Rnd(0.5,1.5),255)
-							If Rand(5)=1 Then
-								ExplosionTimer = 135
-							EndIf
-					End Select	
-					
-					RemoveItem(item)
-				Case "paper"
-					Select setting
-						Case "rough", "coarse"
-							d.Decals = CreateDecal(7, x, 8 * RoomScale + 0.005, z, 90, Rand(360), 0)
-							d\Size = 0.12 : ScaleSprite(d\obj, d\Size, d\Size)
-						Case "1:1"
-							Select Rand(6)
-								Case 1
-									it2 = CreateItem("Document SCP-106", "paper", x, y, z)
-								Case 2
-									it2 = CreateItem("Document SCP-079", "paper", x, y, z)
-								Case 3
-									it2 = CreateItem("Document SCP-173", "paper", x, y, z)
-								Case 4
-									it2 = CreateItem("Document SCP-895", "paper", x, y, z)
-								Case 5
-									it2 = CreateItem("Document SCP-682", "paper", x, y, z)
-								Case 6
-									it2 = CreateItem("Document SCP-860", "paper", x, y, z)
-							End Select
-						Case "fine", "very fine"
-							it2 = CreateItem("Origami", "misc", x, y, z)
-					End Select
-					
-					RemoveItem(item)
-				Default
-					PositionEntity(item\obj, x, y, z)
-					ResetEntity(item\obj)	
-			End Select
-			
-	End Select
-	
-	If it2 <> Null Then EntityType (it2\obj, HIT_ITEM)
-End Function
+Include "914.bb"
 
 Function Use294()
 	Local x#,y#, xtemp%,ytemp%, strtemp$, temp%

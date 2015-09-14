@@ -50,6 +50,7 @@ Function SaveGame(file$)
 	
 	WriteFloat f, Injuries
 	WriteFloat f, Bloodloss
+	WriteFloat f, Heat
 	WriteString f, DeathMSG
 	
 	For i = 0 To 5
@@ -445,6 +446,7 @@ Function LoadGame(file$)
 	
 	Injuries = ReadFloat(f)
 	Bloodloss = ReadFloat(f)
+	Heat = ReadFloat(f)
 	DeathMSG = ReadString(f)
 	
 	For i = 0 To 5
@@ -1034,7 +1036,8 @@ Function LoadGameQuick(file$)
 	EyeIrritation= ReadFloat(f)
 	
 	Injuries = ReadFloat(f)
-	Bloodloss = ReadFloat(f)	
+	Bloodloss = ReadFloat(f)
+	Heat = ReadFloat(f)	
 	DeathMSG = ReadString(f)
 	
 	For i = 0 To 5
